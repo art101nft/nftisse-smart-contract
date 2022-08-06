@@ -4,7 +4,7 @@ pragma solidity ^0.8.0;
 import "erc721a/contracts/ERC721A.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol";
 
 
 /**
@@ -26,6 +26,7 @@ contract NFTisse is ERC721A, Ownable {
     }
 
     mapping(address => bool) public proxyApproved; // proxy accounts for easy listing
+    mapping(uint256 => bool) public tokenUsed;     // token ids used to reserve mints
 
     bool public mintingIsActive = false;           // control if mints can proceed
     bool public reservedTokens = false;            // if team has minted tokens already
@@ -38,17 +39,46 @@ contract NFTisse is ERC721A, Ownable {
     address public immutable proxyRegistryAddress; // primary proxy address (opensea)
     string public baseURI;                         // base URI of hosted IPFS assets
     string public _contractURI;                    // contract URI for details
+    IERC721Enumerable public RMUTT;                // rmutt contract
 
     constructor(
-        address _proxyRegistryAddress
+        address _proxyRegistryAddress,
+        address rmuttAddress
     ) ERC721A("NFTisse", "NFTISSE") {
         proxyRegistryAddress = _proxyRegistryAddress;
-        reserveTokens(); // reserve tokens for team
+        reserveTokens();               // reserve tokens for team
+        setRMUTTAddress(rmuttAddress); // set contract address for RMUTT
     }
 
     // Show contract URI
     function contractURI() public view returns (string memory) {
         return _contractURI;
+    }
+
+    // Allow adjusting contract addresses referenced
+    function setRMUTTAddress(address _a) public onlyOwner {
+        RMUTT = IERC721Enumerable(_a);
+    }
+
+    // Determine amount the address can expect to mint based upon current phase and existing holdings
+    function getMintAmount() public returns (uint256 amt) {
+        if (getMintPhase() == MintPhase.RESERVED) {
+            // Require ownership of RMUTT
+            uint256 currentBalance = RMUTT.balanceOf(msg.sender);
+            uint256 availableMints;
+            for(uint256 i = 0; i < currentBalance; i++) {
+                // get each token user owns and lock that token to prevent duplicate buys and increment amount available to mint
+                uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
+                if (!tokenUsed[token]) {
+                    tokenUsed[token] = true;
+                    availableMints = availableMints.add(1);
+                }
+            }
+            return availableMints;
+        } else if (getMintPhase() == MintPhase.PUBLIC) {
+            // No requirements, public can mint
+            return maxMint;
+        }
     }
 
     // Return number of seconds since we started the initial timer (startTime)
@@ -141,7 +171,9 @@ contract NFTisse is ERC721A, Ownable {
         if (getMintPhase() == MintPhase.PUBLIC) {
             require(numberOfTokens <= maxMint, "Cannot mint more than 3 during mint.");
             require(balanceOf(msg.sender).add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
-        } 
+        } else {
+            require(getMintAmount() > 0, "Not enough balances of Art101 NFTisse NFTs.");
+        }
 
         _mintTokens(numberOfTokens);
     }
