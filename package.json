@@ -1,21 +1,21 @@
 {
-  "name": "smart-contract-base",
+  "name": "nftisse-smart-contract",
   "version": "1.0.0",
-  "description": "Smart contract base template.",
+  "description": "Smart contract for NFTisse NFT drop by Art101.",
   "main": "index.js",
   "scripts": {
     "test": "truffle test"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/patrn-me/RMutt-contract.git"
+    "url": "git+https://github.com/art101nft/nftisse-smart-contract.git"
   },
   "author": "lza_menace@patrn.me",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/art101nft/smart-contract-base/issues"
+    "url": "https://github.com/art101nft/nftisse-smart-contract/issues"
   },
-  "homepage": "https://github.com/art101nft/smart-contract-base",
+  "homepage": "https://github.com/art101nft/nftisse-smart-contract",
   "dependencies": {
     "@openzeppelin/contracts": "^4.5.0",
     "@openzeppelin/test-helpers": "^0.5.15",

@@ -47,7 +47,7 @@ At this point, you've got a deployed contract which will mint new tokens to thos
 
 Here's what you need to gather:
 * Contract address (outputted in `truffle deploy` step above)
-* Contract ABI (`cat build/contracts/NewContract.json | jq .abi` - assumes you have `jq` installed to your system)
+* Contract ABI (`cat build/contracts/NFTisse.json | jq .abi` - assumes you have `jq` installed to your system)
 
 You need a website (HTML + CSS + JS) that makes use of web3 and MetaMask Javascript. You need to define the contract address, the ABI (as array), load web3 and MetaMask Javascript, and invoke the `mintItem` contract.
 
@@ -63,7 +63,7 @@ In the console you have to load your contract and can manually invoke functions.
 
 ```
 $ npx truffle console --network $NETWORK
-truffle(rinkeby)> let c = await NewContract.deployed();
+truffle(rinkeby)> let c = await NFTisse.deployed();
 undefined
 truffle(rinkeby)> (await c.maxSupply()).toString()
 '2048'
