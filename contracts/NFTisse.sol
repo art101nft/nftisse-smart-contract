@@ -61,16 +61,15 @@ contract NFTisse is ERC721A, Ownable {
     }
 
     // Determine amount the address can expect to mint based upon current phase and existing holdings
-    function getMintAmount() public returns (uint256 amt) {
+    function getMintAmount() public view returns (uint256 amt) {
         if (getMintPhase() == MintPhase.RESERVED) {
             // Require ownership of RMUTT
             uint256 currentBalance = RMUTT.balanceOf(msg.sender);
             uint256 availableMints;
+            // Check all owned tokens to see if they have been used to claim already
             for(uint256 i = 0; i < currentBalance; i++) {
-                // get each token user owns and lock that token to prevent duplicate buys and increment amount available to mint
                 uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
                 if (!tokenUsed[token]) {
-                    tokenUsed[token] = true;
                     availableMints = availableMints.add(1);
                 }
             }
@@ -173,6 +172,14 @@ contract NFTisse is ERC721A, Ownable {
             require(balanceOf(msg.sender).add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
         } else {
             require(getMintAmount() > 0, "Not enough balances of Art101 NFTisse NFTs.");
+            for(uint256 i = 0; i < currentBalance; i++) {
+                // get each token user owns and lock that token to prevent duplicate buys and increment amount available to mint
+                uint256 currentBalance = RMUTT.balanceOf(msg.sender);
+                uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
+                if (!tokenUsed[token]) {
+                    tokenUsed[token] = true;
+                }
+            }
         }
 
         _mintTokens(numberOfTokens);
