@@ -1,4 +1,4 @@
-const newURI = '';
+const newURI = 'QmVpgyXJSRdMewG8aWdrPmo1KU3mjeJGE4Uy2EfxGLpiuF';
 
 module.exports = async function main(callback) {
   try {
