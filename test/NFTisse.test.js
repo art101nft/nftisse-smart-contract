@@ -4,7 +4,7 @@ const { expect } = require('chai');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
 const NFTisse = artifacts.require('NFTisse');
 
-contract('NFTisse', function ([owner, other, other2, other3]) {
+contract('NFTisse', async function (accounts) {
 
   let skipMint;
   if (process.env.SKIP == 'true') {
@@ -13,47 +13,68 @@ contract('NFTisse', function ([owner, other, other2, other3]) {
     skipMint = false;
   }
 
+  const nullAddress = '0x0000000000000000000000000000000000000000';
+
   function getPrice(amt_eth) {
     return web3.utils.toWei(amt_eth.toString())
   }
 
+  async function simulateTime() {
+    // simulate 1+ days
+    await web3.currentProvider.send({
+      jsonrpc: '2.0',
+      method: 'evm_increaseTime',
+      id: 0,
+      params: [100000]
+    }, (err, result) => {});
+
+    await web3.currentProvider.send({
+      jsonrpc: '2.0',
+      method: 'evm_mine',
+      id: 0
+    }, (err, result) => {});
+  }
+
   beforeEach(async function () {
-    this.nftisse = await NFTisse.new("0xf57b2c51ded3a29e6891aba85459d600256cf317", {from: owner});
+    this.contract = await NFTisse.new(
+      "0xf57b2c51ded3a29e6891aba85459d600256cf317",
+      "0x6777DD7A163E070d56543A6D20c942f4D89bF2b0",
+      {from: accounts[0]}
+    );
   });
 
-  it('sales are paused by default', async function () {
+  it('sales are paused and RESERVED phase is default', async function () {
     await expect(
-      await this.nftisse.mintingIsActive()
+      await this.contract.mintingIsActive()
     ).to.equal(false);
+    await expect(
+      (await this.contract.getMintPhase()).toString()
+    ).to.equal('0');
   });
 
   it('ownership required for key functions', async function () {
     await expectRevert(
-      this.nftisse.withdraw({from: other}),
+      this.contract.withdraw({from: accounts[1]}),
       'Ownable: caller is not the owner',
     );
     await expectRevert(
-      this.nftisse.toggleMinting({from: other}),
+      this.contract.toggleMinting({from: accounts[1]}),
       'Ownable: caller is not the owner',
     );
     await expectRevert(
-      this.nftisse.toggleEarlyAccessMode({from: other}),
+      this.contract.setBaseURI("ipfs://mynewhash", {from: accounts[1]}),
       'Ownable: caller is not the owner',
     );
     await expectRevert(
-      this.nftisse.setBaseURIreg("ipfs://mynewhash", {from: other}),
+      this.contract.setContractURI("ipfs://myotherhash", {from: accounts[1]}),
       'Ownable: caller is not the owner',
     );
     await expectRevert(
-      this.nftisse.setBaseURIpaid("ipfs://mynewhash", {from: other}),
+      this.contract.toggleProxyState('0x406218da64787A7995897dF4eC2b8c8B3620568a', {from: accounts[1]}),
       'Ownable: caller is not the owner',
     );
     await expectRevert(
-      this.nftisse.setMerkleRoot('0x00', {from: other}),
-      'Ownable: caller is not the owner',
-    );
-    await expectRevert(
-      this.nftisse.reserveTokens({from: other}),
+      this.contract.reserveTokens({from: accounts[1]}),
       'Ownable: caller is not the owner',
     );
   });
@@ -61,228 +82,146 @@ contract('NFTisse', function ([owner, other, other2, other3]) {
   it('toggles work', async function () {
     // toggleMinting function toggles mintingIsActive var
     await expect(
-      await this.nftisse.mintingIsActive()
+      await this.contract.mintingIsActive()
     ).to.equal(false);
-    await this.nftisse.toggleMinting();
+    await this.contract.toggleMinting();
     await expect(
-      await this.nftisse.mintingIsActive()
+      await this.contract.mintingIsActive()
     ).to.equal(true);
-    await this.nftisse.toggleMinting();
+    await this.contract.toggleMinting();
     await expect(
-      await this.nftisse.mintingIsActive()
+      await this.contract.mintingIsActive()
     ).to.equal(false);
-    // toggleEarlyAccessMode function toggles earlyAccessMode var
+    // toggleProxyState function toggles proxyApproved var
     await expect(
-      await this.nftisse.earlyAccessMode()
-    ).to.equal(true);
-    await this.nftisse.toggleEarlyAccessMode();
-    await expect(
-      await this.nftisse.earlyAccessMode()
+      await this.contract.proxyApproved(nullAddress)
     ).to.equal(false);
-    await this.nftisse.toggleEarlyAccessMode();
+    await this.contract.toggleProxyState(nullAddress);
     await expect(
-      await this.nftisse.earlyAccessMode()
+      await this.contract.proxyApproved(nullAddress)
     ).to.equal(true);
+    await this.contract.toggleProxyState(nullAddress);
+    await expect(
+      await this.contract.proxyApproved(nullAddress)
+    ).to.equal(false);
   });
 
   it('set funcs work', async function () {
     // setBaseURI function will set new metadata URI for NFTs
     const _hash = 'ipfs://mynewhash/';
-    await this.nftisse.setBaseURIreg(_hash);
+    await this.contract.setBaseURI(_hash);
     await expect(
-      await this.nftisse.tokenURI(1)
+      await this.contract.tokenURI(1)
     ).to.equal(_hash + '1');
     await expect(
-      await this.nftisse.tokenURI(2048)
+      await this.contract.tokenURI(2048)
     ).to.equal(_hash + '2048');
-    // setMerkleRoot function sets merkle root
-    const _merkle = '0x0000000000000000000000000000000000000000000000000000000000000000';
+  });
+
+  it('reserve func works once and mints 52 to owner', async function () {
+    await this.contract.reserveTokens();
     await expect(
-      await this.nftisse.merkleSet()
-    ).to.equal(false);
-    await this.nftisse.setMerkleRoot(_merkle);
+      (await this.contract.totalSupply()).toString()
+    ).to.equal('52');
     await expect(
-      await this.nftisse.merkleSet()
+      await this.contract.reservedTokens()
     ).to.equal(true);
+    await this.contract.reserveTokens();
+    await expect(
+      (await this.contract.totalSupply()).toString()
+    ).to.equal('52');
   });
 
-  it('reserve func works once and mints 30 to owner', async function () {
-    await this.nftisse.reserveTokens();
+  it('minting works only for holders during RESERVED phase', async function () {
+    await this.contract.toggleMinting();
+    // mint from deployer wallet with RMutt holdings
+    await this.contract.mintPublic(8);
     await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('30');
+      (await this.contract.totalSupply()).toString()
+    ).to.equal('60'); // 52 reserved for team + 8
     await expect(
-      await this.nftisse.reservedTokens()
-    ).to.equal(true);
-    await this.nftisse.reserveTokens();
-    await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('30');
-    // first 15 should be paid for metadata uri
-    for (i = 0; i < 30; i++) {
-      if (i < 15) {
-        await expect(
-          await this.nftisse.tokenURI(i)
-        ).to.equal(baseURIpaid + i);
-      } else {
-        await expect(
-          await this.nftisse.tokenURI(i)
-        ).to.equal(baseURIreg + i);
-      }
-    }
-  });
-
-  it('early access mode w/ merkle root hash allows whitelist minting', async function () {
-    let root = proofs.root.Proof[0];
-    await this.nftisse.setMerkleRoot(root);
-    await this.nftisse.toggleMinting();
-
-    // Mint 1 for .01
-    await this.nftisse.mintTokens(
-      proofs[other].Index,
-      other,
-      proofs[other].Amount,
-      proofs[other].Proof,
-      1, {value: getPrice(.01), from: other}
-    );
-    await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('1');
-
-    // .01 payment should be paid base URI
-    await expect(
-      await this.nftisse.tokenURI(0)
-    ).to.equal(baseURIpaid + '0');
-
-    // Mint 1 for .009
-    await this.nftisse.mintTokens(
-      proofs[other].Index,
-      other,
-      proofs[other].Amount,
-      proofs[other].Proof,
-      1, {value: getPrice(.009), from: other}
-    );
-    await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('2');
-
-    // .009 payment should be regular base URI
-    await expect(
-      await this.nftisse.tokenURI(1)
-    ).to.equal(baseURIreg + '1');
-
-    // Mint 1 for 0
-    await this.nftisse.mintTokens(
-      proofs[other].Index,
-      other,
-      proofs[other].Amount,
-      proofs[other].Proof,
-      1, {value: 0, from: other}
-    );
-    await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('3');
-
-    // 0 payment should be regular base URI
-    await expect(
-      await this.nftisse.tokenURI(2)
-    ).to.equal(baseURIreg + '2');
-
-    // Should enforce merkle proofs
+      (await this.contract.getMintAmount()).toString()
+    ).to.equal('45'); // 53 Rmutt owned - 8 Nftisse just minted
+    // try to mint more nftisse than rmutt owned should fail
     await expectRevert(
-      this.nftisse.mintTokens(0, owner, 0, [], 1, {value: getPrice(.01), from: owner}),
-      'Invalid merkle proof.',
+      this.contract.mintPublic(60),
+      'Cannot mint more NFTisse tokens than unclaimed RMutt tokens.'
     );
-
-    // mint 10 with other3 wallet
-    await this.nftisse.mintTokens(
-      proofs[other3].Index,
-      other3,
-      proofs[other3].Amount,
-      proofs[other3].Proof,
-      10, {value: getPrice(.1), from: other3}
-    );
-    // transfer all 10 to other wallet
-    for (i = 3; i < 13; i++) {
-      await this.nftisse.transferFrom(other3, other2, i, {from: other3});
-    }
+    // mint remaining reserve
+    await this.contract.mintPublic(45);
     await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('13');
-    // mint 10 more with other3 wallet - should fail
+      (await this.contract.totalSupply()).toString()
+    ).to.equal('105');
+    await expect(
+      (await this.contract.getMintAmount()).toString()
+    ).to.equal('0'); // should have used all reserves
+    // mint from account with no RMutt holdings during RESERVED phase
     await expectRevert(
-      this.nftisse.mintTokens(
-        proofs[other3].Index,
-        other3,
-        proofs[other3].Amount,
-        proofs[other3].Proof,
-        10, {value: getPrice(.1), from: other3}
-      ),
-      'Cannot exceed amount whitelisted during early access mode.',
+      this.contract.mintPublic(1, {from: accounts[1]}),
+      'Not enough unclaimed Art101 RMutt tokens.',
     );
-    // still 13 supply, still 10 tracked for other3 wallet
-    await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('13');
-    await expect(
-      (await this.nftisse.earlyAccessMinted(other3)).toString()
-    ).to.equal('10');
   });
 
-  it('minting works', async function () {
-    await this.nftisse.toggleMinting();
-    await this.nftisse.toggleEarlyAccessMode();
-    await this.nftisse.mintTokens(0, other, 0, [], 1, {value: 0, from: other});
-    await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('1');
-    await this.nftisse.mintTokens(0, other, 0, [], 2, {value: 0, from: other});
-    await expect(
-      (await this.nftisse.totalSupply()).toString()
-    ).to.equal('3');
+  it('minting works for all during PUBLIC phase', async function () {
+    await this.contract.toggleMinting();
+    await simulateTime();
+    // cannot mint more than 3 during PUBLIC
     await expectRevert(
-      this.nftisse.mintTokens(0, other, 0, [], 6, {value: 0, from: other}),
-      'Cannot mint more than 5 per tx during public sale.',
+      this.contract.mintPublic(4, {from: accounts[1]}),
+      'Cannot mint more than 3 during mint.'
     );
-  });
+    // cannot mint more than 3 per wallet during mint
+    await this.contract.mintPublic(3, {from: accounts[1]});
+    await expectRevert(
+      this.contract.mintPublic(3, {from: accounts[1]}),
+      'Cannot mint more than 3 per wallet.'
+    );
+    await expectRevert(
+      this.contract.mintPublic(3),
+      'Cannot mint more than 3 per wallet.'
+    );
+  })
 
   it('minting supply will halt minting', async function() {
-    // Minting should not be active and early access mode is on by default
+    this.timeout(0); // dont timeout for this long test
+    // Minting should not be active be default
     await expect(
-      await this.nftisse.mintingIsActive()
+      await this.contract.mintingIsActive()
     ).to.equal(false);
+    // Toggle minting
+    await this.contract.toggleMinting();
+    // Minting should now be active
     await expect(
-      await this.nftisse.earlyAccessMode()
+      await this.contract.mintingIsActive()
     ).to.equal(true);
-    // Toggle minting and early access mode
-    await this.nftisse.toggleMinting();
-    await this.nftisse.toggleEarlyAccessMode();
-    // Minting/early access should now be on/off
+    // Mint phase is 0 by default (RESERVED; RMUTT holders only)
     await expect(
-      await this.nftisse.mintingIsActive()
-    ).to.equal(true);
+      (await this.contract.getMintPhase()).toString()
+    ).to.equal('0');
+    // Simulate 24+ hours for test
+    await simulateTime();
     await expect(
-      await this.nftisse.earlyAccessMode()
-    ).to.equal(false);
+      (await this.contract.getMintPhase()).toString()
+    ).to.equal('1');
     if (!skipMint) {
-      // Mint all 2048
-      for (i = 0; i < 512; i++) {
-        await this.nftisse.mintTokens(0, other, 0, [], 4, {value: 0, from: other});
-      }
+      // Mint all 3072 (already minted 52 at contract deploy)
+      for (i = 0; i < 1510; i++) {
+        await this.contract.mintPublic(2, {from: accounts[3 + i]});
+      };
       await expect(
-        (await this.nftisse.totalSupply()).toString()
-      ).to.equal('2048');
+        (await this.contract.totalSupply()).toString()
+      ).to.equal('3072');
       // Minting should no longer be active
       await expect(
-        await this.nftisse.mintingIsActive()
+        await this.contract.mintingIsActive()
       ).to.equal(false);
       // Should not be able to mint more
       await expectRevert(
-        this.nftisse.mintTokens(0, other, 0, [], 1, {value: 0, from: other}),
+        this.contract.mintPublic(3, {from: accounts[1]}),
         'Minting is not active.',
       );
     }
-  })
+  });
 
 
 });

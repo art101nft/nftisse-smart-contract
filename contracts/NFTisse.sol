@@ -62,19 +62,19 @@ contract NFTisse is ERC721A, Ownable {
 
     // Determine amount the address can expect to mint based upon current phase and existing holdings
     function getMintAmount() public view returns (uint256 amt) {
-        if (getMintPhase() == MintPhase.RESERVED) {
+        MintPhase mintphase = getMintPhase();
+        if (mintphase == MintPhase.RESERVED) {
             // Require ownership of RMUTT
-            uint256 currentBalance = RMUTT.balanceOf(msg.sender);
             uint256 availableMints;
             // Check all owned tokens to see if they have been used to claim already
-            for(uint256 i = 0; i < currentBalance; i++) {
+            for(uint256 i = 0; i < RMUTT.balanceOf(msg.sender); i++) {
                 uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
                 if (!tokenUsed[token]) {
                     availableMints = availableMints.add(1);
                 }
             }
             return availableMints;
-        } else if (getMintPhase() == MintPhase.PUBLIC) {
+        } else if (mintphase == MintPhase.PUBLIC) {
             // No requirements, public can mint
             return maxMint;
         }
@@ -171,13 +171,19 @@ contract NFTisse is ERC721A, Ownable {
             require(numberOfTokens <= maxMint, "Cannot mint more than 3 during mint.");
             require(balanceOf(msg.sender).add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
         } else {
-            require(getMintAmount() > 0, "Not enough balances of Art101 NFTisse NFTs.");
-            for(uint256 i = 0; i < currentBalance; i++) {
+            uint256 mintable = getMintAmount();
+            require(mintable > 0, "Not enough unclaimed Art101 RMutt tokens.");
+            require(numberOfTokens <= mintable, "Cannot mint more NFTisse tokens than unclaimed RMutt tokens.");
+            uint256 locked;
+            for(uint256 i = 0; i < RMUTT.balanceOf(msg.sender); i++) {
                 // get each token user owns and lock that token to prevent duplicate buys and increment amount available to mint
-                uint256 currentBalance = RMUTT.balanceOf(msg.sender);
-                uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
-                if (!tokenUsed[token]) {
-                    tokenUsed[token] = true;
+                // only lock tokens up to the amount requested
+                if (locked < numberOfTokens) {
+                    uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
+                    if (!tokenUsed[token]) {
+                        tokenUsed[token] = true;
+                        locked = locked.add(1);
+                    }
                 }
             }
         }
