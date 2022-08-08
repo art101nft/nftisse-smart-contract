@@ -9,5 +9,5 @@ module.exports = function(deployer) {
     console.log('[+] Using OpenSea testnet proxy address 0xf57b2c51ded3a29e6891aba85459d600256cf317');
     addr = '0xf57b2c51ded3a29e6891aba85459d600256cf317';
   }
-  deployer.deploy(NFTisse, addr, "0xCfEB869F69431e42cdB54A4F4f105C19C080A601");
+  deployer.deploy(NFTisse, addr, "0x471365176f83e055d70e050e28d5c654651f12f9");
 };
