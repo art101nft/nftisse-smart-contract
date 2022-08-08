@@ -148,7 +148,14 @@ contract('NFTisse', async function (accounts) {
       'Cannot mint more NFTisse tokens than unclaimed RMutt tokens.'
     );
     // mint remaining reserve
-    await this.contract.mintPublic(45);
+    await this.contract.mintPublic(40);
+    await expect(
+      (await this.contract.totalSupply()).toString()
+    ).to.equal('100');
+    await expect(
+      (await this.contract.getMintAmount()).toString()
+    ).to.equal('5'); // should have 5 remaining
+    await this.contract.mintPublic(5);
     await expect(
       (await this.contract.totalSupply()).toString()
     ).to.equal('105');
