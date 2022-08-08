@@ -38,7 +38,7 @@ contract('NFTisse', async function (accounts) {
   beforeEach(async function () {
     this.contract = await NFTisse.new(
       "0xf57b2c51ded3a29e6891aba85459d600256cf317",
-      "0x6777DD7A163E070d56543A6D20c942f4D89bF2b0",
+      "0xCfEB869F69431e42cdB54A4F4f105C19C080A601",
       {from: accounts[0]}
     );
   });
@@ -187,6 +187,14 @@ contract('NFTisse', async function (accounts) {
       this.contract.mintPublic(3),
       'Cannot mint more than 3 per wallet.'
     );
+    // now let's mint
+    await this.contract.mintPublic(3, {from: accounts[2]});
+    await this.contract.mintPublic(3, {from: accounts[3]});
+    await this.contract.mintPublic(3, {from: accounts[4]});
+    await this.contract.mintPublic(3, {from: accounts[5]});
+    await expect(
+      (await this.contract.totalSupply()).toString()
+    ).to.equal('67');
   })
 
   it('minting supply will halt minting', async function() {
@@ -212,9 +220,13 @@ contract('NFTisse', async function (accounts) {
     ).to.equal('1');
     if (!skipMint) {
       // Mint all 3072 (already minted 52 at contract deploy)
-      for (i = 0; i < 1510; i++) {
-        await this.contract.mintPublic(2, {from: accounts[3 + i]});
+      for (i = 0; i < 1006; i++) {
+        await this.contract.mintPublic(3, {from: accounts[10 + i]});
       };
+      await expect(
+        (await this.contract.totalSupply()).toString()
+      ).to.equal('3070');
+      await this.contract.mintPublic(2, {from: accounts[2]});
       await expect(
         (await this.contract.totalSupply()).toString()
       ).to.equal('3072');
