@@ -2,8 +2,8 @@ const newURI = 'QmVpgyXJSRdMewG8aWdrPmo1KU3mjeJGE4Uy2EfxGLpiuF';
 
 module.exports = async function main(callback) {
   try {
-    const NonFungibleSoup = artifacts.require("NonFungibleSoup");
-    const nfs = await NonFungibleSoup.deployed();
+    const NFTisse = artifacts.require("NFTisse");
+    const nfs = await NFTisse.deployed();
     if (newURI == '') {
       console.log('You need to specify a metadata URI where assets can be loaded. ie: "ipfs://xxxxxx/"');
       callback(1);
