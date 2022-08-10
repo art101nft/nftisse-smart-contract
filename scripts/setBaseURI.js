@@ -1,4 +1,4 @@
-const newURI = 'ipfs://Qme4y9WaEMxYZLS7ssAbYALVvXC7ma5QKb5GA84jTiNWet/';
+const newURI = 'ipfs://QmawpEx9kVNeRXrU3d5rUbpEQiMHszyxdXf8PKm6WMK1Vg/';
 
 module.exports = async function main(callback) {
   try {
