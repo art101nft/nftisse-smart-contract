@@ -10,7 +10,7 @@
 
 ### The long answer
 
-We attempted to use a new format when minting to eliminate the extra logistics of using a snapshot based approach since it requires many extra steps. This new format involves referencing an external contract, in this case RMUTT, to query wallet balances. In order to prevent abuse and enforce limits, we query the wallet's token holdings since we used ERC721A which providers the ability to enumerate token IDs that a wallet holds, and store it in a mapping to "lock" token IDs to prevent duplicate claiming by transferring off balances. This has the result of being more gas-heavy since we have to loop through a wallet's owned RMUTT tokens and check or update a mapping. This can be seen in the following code:
+We attempted to use a new format when minting to eliminate the extra logistics of using a snapshot based approach since it requires many extra steps. This new format involves referencing an external contract, in this case RMUTT, to query wallet balances. In order to prevent abuse and enforce limits, we query the wallet's token holdings since we used ERC721A which provides the ability to enumerate token IDs that a wallet holds, and store it in a mapping to "lock" token IDs to prevent duplicate claiming by transferring off balances. This has the result of being more gas-heavy since we have to loop through a wallet's owned RMUTT tokens and check or update a mapping. This can be seen in the following code:
 
 ```
 mapping(uint256 => bool) public tokenUsed;        // token ids used to reserve mints
@@ -89,3 +89,5 @@ Mint delay should hopefully be just 24 hours assuming we can get things fixed to
 
 
 # Thanks for reading!
+
+- [LZA](https://lzahq.tech)

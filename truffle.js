@@ -19,6 +19,7 @@ module.exports = {
       gasPrice: 2000000000 // 2 gwei
     },
     mainnet: {
+      networkTimeout: 10000,
       provider: () => new HDWalletProvider(process.env.MNEMONIC, "https://mainnet.infura.io/v3/" + process.env.INFURA_PID),
       network_id: 1,
       confirmations: 3,
@@ -26,7 +27,7 @@ module.exports = {
       skipDryRun: false,
       production: true,
       gas: 3500000,
-      gasPrice: 20000000000 // 20 gwei
+      gasPrice: 25000000000 // 20 gwei
     },
   },
   mocha: {
