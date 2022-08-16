@@ -25,8 +25,9 @@ contract NFTisse is ERC721A, Ownable {
         PUBLIC     // 2 - no requirements, public can mint, including reserves
     }
 
-    mapping(address => bool) public proxyApproved; // proxy accounts for easy listing
-    mapping(uint256 => bool) public tokenUsed;     // token ids used to reserve mints
+    mapping(address => bool) public proxyApproved;    // proxy accounts for easy listing
+    mapping(uint256 => bool) public tokenUsed;        // token ids used to reserve mints
+    mapping(address => uint256) public walletBalance; // internal balance to enforce limits
 
     bool public mintingIsActive = false;           // control if mints can proceed
     bool public reservedTokens = false;            // if team has minted tokens already
@@ -76,7 +77,12 @@ contract NFTisse is ERC721A, Ownable {
             return availableMints;
         } else if (mintphase == MintPhase.PUBLIC) {
             // No requirements, public can mint
-            return maxMint;
+            // Return only the amount they can mint remaining
+            if (walletBalance[msg.sender] >= maxMint) {
+              return 0;
+            } else {
+              return maxMint - walletBalance[msg.sender];
+            }
         }
     }
 
@@ -155,6 +161,11 @@ contract NFTisse is ERC721A, Ownable {
         // Mint number of tokens requested
         _safeMint(msg.sender, numberOfTokens);
 
+        // Increment internal wallet balance if in PUBLIC mode
+        if (getMintPhase() == MintPhase.PUBLIC) {
+          walletBalance[msg.sender] = walletBalance[msg.sender].add(numberOfTokens);
+        }
+
         // Disable minting if max supply of tokens is reached
         if (totalSupply() == maxSupply) {
             mintingIsActive = false;
@@ -169,7 +180,7 @@ contract NFTisse is ERC721A, Ownable {
 
         if (getMintPhase() == MintPhase.PUBLIC) {
             require(numberOfTokens <= maxMint, "Cannot mint more than 3 during mint.");
-            require(balanceOf(msg.sender).add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
+            require(walletBalance[msg.sender].add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
         } else {
             uint256 mintable = getMintAmount();
             require(mintable > 0, "Not enough unclaimed Art101 RMutt tokens.");
