@@ -134,6 +134,7 @@ contract NFTisse is ERC721A, Ownable {
     // Internal mint function
     function _mintTokens(uint256 numberOfTokens) private {
         require(numberOfTokens > 0, "Must mint at least 1 token.");
+        require(totalSupply().add(numberOfTokens) <= maxSupply, "Minting would exceed max supply.");
 
         // Mint number of tokens requested
         _safeMint(msg.sender, numberOfTokens);
@@ -155,7 +156,6 @@ contract NFTisse is ERC721A, Ownable {
     function mintPublic(uint256 numberOfTokens) external payable {
         require(mintingIsActive, "Minting is not active.");
         require(msg.sender == tx.origin, "Cannot mint from external contract.");
-        require(totalSupply().add(numberOfTokens) <= maxSupply, "Minting would exceed max supply.");
         require(getMintPhase() == MintPhase.PUBLIC, "Must be in public mint phase.");
         require(numberOfTokens <= maxMint, "Cannot mint more than 3 during mint.");
         require(publicBalance[msg.sender].add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
@@ -163,7 +163,7 @@ contract NFTisse is ERC721A, Ownable {
         _mintTokens(numberOfTokens);
     }
 
-    function mintSnapshot(
+    function mintReserved(
       uint256 index,
       address account,
       uint256 whitelistedAmount,
@@ -171,7 +171,6 @@ contract NFTisse is ERC721A, Ownable {
       uint256 numberOfTokens
     ) external payable {
         require(mintingIsActive, "Minting is not active.");
-        require(totalSupply().add(numberOfTokens) <= maxSupply, "Minting would exceed max supply.");
         require(reservedBalance[msg.sender].add(numberOfTokens) <= whitelistedAmount, "Cannot mint more than the amount whitelisted for.");
 
         // Merkle checks
