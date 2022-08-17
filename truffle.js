@@ -33,8 +33,11 @@ module.exports = {
   mocha: {
     reporter: "eth-gas-reporter",
     reporterOptions: {
-      currency: "USD",
-      gasPrice: 2,
+      gasPrice: 30,
+      outputFile: "testResults.log",
+      forceConsoleOutput: true,
+      rst: true,
+      noColors: true
     },
   },
   compilers: {

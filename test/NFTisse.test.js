@@ -1,4 +1,5 @@
 // test/NFTisse.test.js
+const fs = require('fs');
 const { execSync } = require("child_process");
 const { expect } = require('chai');
 const { BN, expectEvent, expectRevert } = require('@openzeppelin/test-helpers');
@@ -6,6 +7,8 @@ const NFTisse = artifacts.require('NFTisse');
 
 contract('NFTisse', async function (accounts) {
 
+  let addresses;
+  let proofs;
   let skipMint;
   if (process.env.SKIP == 'true') {
     skipMint = true;
@@ -35,15 +38,39 @@ contract('NFTisse', async function (accounts) {
     }, (err, result) => {});
   }
 
+  before(async function () {
+    let addressesWhitelist = new Object();
+    addressesWhitelist[accounts[1]] = "1";
+    addressesWhitelist[accounts[2]] = "3";
+    addressesWhitelist[accounts[3]] = "5";
+    addressesWhitelist[accounts[4]] = "15";
+    addressesWhitelist[accounts[5]] = "20";
+
+    fs.writeFileSync(
+      "./output.json",
+      JSON.stringify(addressesWhitelist),
+      "utf8"
+    );
+
+    execSync(
+      `go-merkle-distributor --json-file=output.json --output-file=proofs.json`,
+      {
+        stdio: "inherit",
+      }
+    );
+
+    proofs = JSON.parse(fs.readFileSync("proofs.json", "utf8"));
+    addresses = Object.keys(proofs);
+  });
+
   beforeEach(async function () {
     this.contract = await NFTisse.new(
       "0xf57b2c51ded3a29e6891aba85459d600256cf317",
-      "0xCfEB869F69431e42cdB54A4F4f105C19C080A601",
       {from: accounts[0]}
     );
   });
 
-  it('sales are paused and RESERVED phase is default', async function () {
+  it('should start with sales paused and RESERVED phase default', async function () {
     await expect(
       await this.contract.mintingIsActive()
     ).to.equal(false);
@@ -52,7 +79,7 @@ contract('NFTisse', async function (accounts) {
     ).to.equal('0');
   });
 
-  it('ownership required for key functions', async function () {
+  it('should require ownership for key functions', async function () {
     await expectRevert(
       this.contract.withdraw({from: accounts[1]}),
       'Ownable: caller is not the owner',
@@ -79,7 +106,7 @@ contract('NFTisse', async function (accounts) {
     );
   });
 
-  it('toggles work', async function () {
+  it('should allow working toggles', async function () {
     // toggleMinting function toggles mintingIsActive var
     await expect(
       await this.contract.mintingIsActive()
@@ -106,7 +133,7 @@ contract('NFTisse', async function (accounts) {
     ).to.equal(false);
   });
 
-  it('set funcs work', async function () {
+  it('should allow set funcs', async function () {
     // setBaseURI function will set new metadata URI for NFTs
     const _hash = 'ipfs://mynewhash/';
     await this.contract.setBaseURI(_hash);
@@ -118,8 +145,7 @@ contract('NFTisse', async function (accounts) {
     ).to.equal(_hash + '2048');
   });
 
-  it('reserve func works once and mints 52 to owner', async function () {
-    await this.contract.reserveTokens();
+  it('should reserve team tokens upon contract deploy and only allow once', async function () {
     await expect(
       (await this.contract.totalSupply()).toString()
     ).to.equal('52');
@@ -132,88 +158,181 @@ contract('NFTisse', async function (accounts) {
     ).to.equal('52');
   });
 
-  it('minting works only for holders during RESERVED phase', async function () {
-    await this.contract.toggleMinting();
-    // mint from deployer wallet with RMutt holdings
-    await this.contract.mintPublic(8);
-    await expect(
-      (await this.contract.totalSupply()).toString()
-    ).to.equal('60'); // 52 reserved for team + 8
-    await expect(
-      (await this.contract.getMintAmount()).toString()
-    ).to.equal('45'); // 53 Rmutt owned - 8 Nftisse just minted
-    // try to mint more nftisse than rmutt owned should fail
+  // mintReserved checks
+  it('should require mintingIsActive be true to mint', async function () {
     await expectRevert(
-      this.contract.mintPublic(60),
-      'Cannot mint more NFTisse tokens than unclaimed RMutt tokens.'
-    );
-    // mint remaining reserve
-    await this.contract.mintPublic(40);
-    await expect(
-      (await this.contract.totalSupply()).toString()
-    ).to.equal('100');
-    await expect(
-      (await this.contract.getMintAmount()).toString()
-    ).to.equal('5'); // should have 5 remaining
-    await this.contract.mintPublic(5);
-    await expect(
-      (await this.contract.totalSupply()).toString()
-    ).to.equal('105');
-    await expect(
-      (await this.contract.getMintAmount()).toString()
-    ).to.equal('0'); // should have used all reserves
-    // mint from account with no RMutt holdings during RESERVED phase
-    await expectRevert(
-      this.contract.mintPublic(1, {from: accounts[1]}),
-      'Not enough unclaimed Art101 RMutt tokens.',
+      this.contract.mintReserved(
+        proofs[accounts[5]].Index,
+        accounts[5],
+        proofs[accounts[5]].Amount,
+        proofs[accounts[5]].Proof,
+        20, {from: accounts[5]}
+      ),
+      'Minting is not active.'
     );
   });
 
-  it('minting works for all during PUBLIC phase', async function () {
+  // it('should prevent minting from exceeding max supply', async function () {});
+
+  it('should prevent minting more than whitelisted for', async function () {
+    await this.contract.toggleMinting();
+    await this.contract.setMerkleRoot(proofs.root.Proof[0]);
+    await expectRevert(
+      this.contract.mintReserved(
+        proofs[accounts[5]].Index,
+        accounts[5],
+        proofs[accounts[5]].Amount,
+        proofs[accounts[5]].Proof,
+        21, {from: accounts[5]}
+      ),
+      'Cannot mint more than the amount whitelisted for.'
+    );
+  });
+
+  it('should require merkle root be set', async function () {
+    await this.contract.toggleMinting();
+    await expectRevert(
+      this.contract.mintReserved(
+        proofs[accounts[5]].Index,
+        accounts[5],
+        proofs[accounts[5]].Amount,
+        proofs[accounts[5]].Proof,
+        20, {from: accounts[5]}
+      ),
+      'Merkle root not set by contract owner.'
+    );
+  });
+
+  it('should require msg.sender to be whitelisted address', async function () {
+    await this.contract.toggleMinting();
+    await this.contract.setMerkleRoot(proofs.root.Proof[0]);
+    await expectRevert(
+      this.contract.mintReserved(
+        proofs[accounts[5]].Index,
+        accounts[5],
+        proofs[accounts[5]].Amount,
+        proofs[accounts[5]].Proof,
+        20, {from: accounts[50]}
+      ),
+      'Can only be claimed by the whitelisted address.'
+    );
+  });
+
+  it('should require valid merkle proof signature', async function () {
+    await this.contract.toggleMinting();
+    await this.contract.setMerkleRoot(proofs.root.Proof[0]);
+    await expectRevert(
+      this.contract.mintReserved(
+        proofs[accounts[5]].Index,
+        accounts[5],
+        500,
+        proofs[accounts[5]].Proof,
+        20, {from: accounts[5]}
+      ),
+      'Invalid merkle proof.'
+    );
+  });
+
+  it('should allow minting for whitelisted addresses', async function () {
+    await this.contract.toggleMinting();
+    await this.contract.setMerkleRoot(proofs.root.Proof[0]);
+    await this.contract.mintReserved(
+      proofs[accounts[1]].Index,
+      accounts[1],
+      proofs[accounts[1]].Amount,
+      proofs[accounts[1]].Proof,
+      1, {from: accounts[1]}
+    );
+    await this.contract.mintReserved(
+      proofs[accounts[2]].Index,
+      accounts[2],
+      proofs[accounts[2]].Amount,
+      proofs[accounts[2]].Proof,
+      3, {from: accounts[2]}
+    );
+    await this.contract.mintReserved(
+      proofs[accounts[3]].Index,
+      accounts[3],
+      proofs[accounts[3]].Amount,
+      proofs[accounts[3]].Proof,
+      5, {from: accounts[3]}
+    );
+    await this.contract.mintReserved(
+      proofs[accounts[4]].Index,
+      accounts[4],
+      proofs[accounts[4]].Amount,
+      proofs[accounts[4]].Proof,
+      15, {from: accounts[4]}
+    );
+    await this.contract.mintReserved(
+      proofs[accounts[5]].Index,
+      accounts[5],
+      proofs[accounts[5]].Amount,
+      proofs[accounts[5]].Proof,
+      20, {from: accounts[5]}
+    );
+  });
+
+  // mintPublic
+
+  if('should require mintingIsActive be true to mint', async function() {
+    await simulateTime();
+    await expectRevert(
+      this.contract.mintPublic(
+        1, {from: accounts[10]}
+      ),
+      'Minting is not active.'
+    );
+  });
+
+  if('should require PUBLIC mint phase for mintPublic', async function() {
+    await this.contract.toggleMinting();
+    await expectRevert(
+      this.contract.mintPublic(
+        1, {from: accounts[10]}
+      ),
+      'Must be in public mint phase.'
+    );
+  });
+
+  if('should prevent minting more than 3 per tx', async function() {
     await this.contract.toggleMinting();
     await simulateTime();
-    // cannot mint more than 3 during PUBLIC
     await expectRevert(
-      this.contract.mintPublic(4, {from: accounts[1]}),
+      this.contract.mintPublic(
+        4, {from: accounts[10]}
+      ),
       'Cannot mint more than 3 during mint.'
     );
-    // cannot mint more than 3 per wallet during mint
-    await this.contract.mintPublic(3, {from: accounts[1]});
-    await expectRevert(
-      this.contract.mintPublic(3, {from: accounts[1]}),
-      'Cannot mint more than 3 per wallet.'
+  });
+
+  if('should prevent minting more than 3 per wallet', async function() {
+    await this.contract.toggleMinting();
+    await simulateTime();
+    await this.contract.mintPublic(
+      3, {from: accounts[10]}
     );
     await expectRevert(
-      this.contract.mintPublic(3),
+      this.contract.mintPublic(
+        1, {from: accounts[10]}
+      ),
       'Cannot mint more than 3 per wallet.'
     );
-    // now let's mint
-    await this.contract.mintPublic(3, {from: accounts[2]});
-    await this.contract.mintPublic(3, {from: accounts[3]});
-    await this.contract.mintPublic(3, {from: accounts[4]});
-    await this.contract.mintPublic(3, {from: accounts[5]});
-    await expect(
-      (await this.contract.totalSupply()).toString()
-    ).to.equal('67');
-  })
+    // transfer 1 off to ensure they can't skirt this check
+    let tokenId = await this.contract.tokenOfOwnerByIndex(accounts[10], 0);
+    await this.contract.transferFrom(accounts[10], nullAddress, tokenId, {from: accounts[10]});
+    await expectRevert(
+      this.contract.mintPublic(
+        1, {from: accounts[10]}
+      ),
+      'Cannot mint more than 3 per wallet.'
+    );
+  });
 
   it('minting supply will halt minting', async function() {
     this.timeout(0); // dont timeout for this long test
     // Minting should not be active be default
-    await expect(
-      await this.contract.mintingIsActive()
-    ).to.equal(false);
-    // Toggle minting
     await this.contract.toggleMinting();
-    // Minting should now be active
-    await expect(
-      await this.contract.mintingIsActive()
-    ).to.equal(true);
-    // Mint phase is 0 by default (RESERVED; RMUTT holders only)
-    await expect(
-      (await this.contract.getMintPhase()).toString()
-    ).to.equal('0');
-    // Simulate 24+ hours for test
     await simulateTime();
     await expect(
       (await this.contract.getMintPhase()).toString()
