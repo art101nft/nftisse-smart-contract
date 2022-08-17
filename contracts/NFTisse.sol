@@ -94,7 +94,7 @@ contract NFTisse is ERC721A, Ownable {
         if (startTime == 0) {
             // Update phase times when we first toggle minting
             startTime = block.timestamp;
-            reserveTime = startTime + 24 hours;
+            reserveTime = startTime + 28 hours;
         }
         mintingIsActive = !mintingIsActive;
     }
