@@ -63,10 +63,6 @@ contract('NFTisse', async function (accounts) {
     addresses = Object.keys(proofs);
   });
 
-  after(async function () {
-    fs.unlink("proofs.json");
-  })
-
   beforeEach(async function () {
     this.contract = await NFTisse.new(
       "0xf57b2c51ded3a29e6891aba85459d600256cf317",
