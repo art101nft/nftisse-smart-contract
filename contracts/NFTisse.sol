@@ -139,13 +139,6 @@ contract NFTisse is ERC721A, Ownable {
         // Mint number of tokens requested
         _safeMint(msg.sender, numberOfTokens);
 
-        // Increment internal wallet balances
-        if (getMintPhase() == MintPhase.RESERVED) {
-            reservedBalance[msg.sender] = reservedBalance[msg.sender].add(numberOfTokens);
-        } else {
-            publicBalance[msg.sender] = publicBalance[msg.sender].add(numberOfTokens);
-        }
-
         // Disable minting if max supply of tokens is reached
         if (totalSupply() == maxSupply) {
             mintingIsActive = false;
@@ -161,6 +154,7 @@ contract NFTisse is ERC721A, Ownable {
         require(publicBalance[msg.sender].add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
 
         _mintTokens(numberOfTokens);
+        publicBalance[msg.sender] = publicBalance[msg.sender].add(numberOfTokens);
     }
 
     function mintReserved(
@@ -180,6 +174,7 @@ contract NFTisse is ERC721A, Ownable {
         require(MerkleProof.verify(merkleProof, merkleRoot, node), "Invalid merkle proof.");
 
         _mintTokens(numberOfTokens);
+        reservedBalance[msg.sender] = reservedBalance[msg.sender].add(numberOfTokens);
     }
 
     /*
