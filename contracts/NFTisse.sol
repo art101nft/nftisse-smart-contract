@@ -5,6 +5,7 @@ import "erc721a/contracts/ERC721A.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Enumerable.sol";
+import "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
 
 
 /**
@@ -25,10 +26,13 @@ contract NFTisse is ERC721A, Ownable {
         PUBLIC     // 2 - no requirements, public can mint, including reserves
     }
 
-    mapping(address => bool) public proxyApproved;    // proxy accounts for easy listing
-    mapping(uint256 => bool) public tokenUsed;        // token ids used to reserve mints
-    mapping(address => uint256) public walletBalance; // internal balance to enforce limits
+    mapping(address => bool) public proxyApproved;      // proxy accounts for easy listing
+    mapping(address => uint256) public publicBalance;   // internal balance of public mints to enforce limits
+    mapping(address => uint256) public reservedBalance; // internal balance of reserved mints to enforce limits
 
+
+    bytes32 public merkleRoot;                     // root merkle proof hash
+    bool public merkleSet = false;                 // if contract merkle setup
     bool public mintingIsActive = false;           // control if mints can proceed
     bool public reservedTokens = false;            // if team has minted tokens already
     uint256 public constant maxSupply = 3072;      // total supply
@@ -40,50 +44,15 @@ contract NFTisse is ERC721A, Ownable {
     address public immutable proxyRegistryAddress; // primary proxy address (opensea)
     string public baseURI;                         // base URI of hosted IPFS assets
     string public _contractURI;                    // contract URI for details
-    IERC721Enumerable public RMUTT;                // rmutt contract
 
-    constructor(
-        address _proxyRegistryAddress,
-        address rmuttAddress
-    ) ERC721A("NFTisse", "NFTISSE") {
+    constructor(address _proxyRegistryAddress) ERC721A("NFTisse", "NFTISSE") {
         proxyRegistryAddress = _proxyRegistryAddress;
-        reserveTokens();               // reserve tokens for team
-        setRMUTTAddress(rmuttAddress); // set contract address for RMUTT
+        reserveTokens(); // reserve tokens for team
     }
 
     // Show contract URI
     function contractURI() public view returns (string memory) {
         return _contractURI;
-    }
-
-    // Allow adjusting contract addresses referenced
-    function setRMUTTAddress(address _a) public onlyOwner {
-        RMUTT = IERC721Enumerable(_a);
-    }
-
-    // Determine amount the address can expect to mint based upon current phase and existing holdings
-    function getMintAmount() public view returns (uint256 amt) {
-        MintPhase mintphase = getMintPhase();
-        if (mintphase == MintPhase.RESERVED) {
-            // Require ownership of RMUTT
-            uint256 availableMints;
-            // Check all owned tokens to see if they have been used to claim already
-            for(uint256 i = 0; i < RMUTT.balanceOf(msg.sender); i++) {
-                uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
-                if (!tokenUsed[token]) {
-                    availableMints = availableMints.add(1);
-                }
-            }
-            return availableMints;
-        } else if (mintphase == MintPhase.PUBLIC) {
-            // No requirements, public can mint
-            // Return only the amount they can mint remaining
-            if (walletBalance[msg.sender] >= maxMint) {
-              return 0;
-            } else {
-              return maxMint - walletBalance[msg.sender];
-            }
-        }
     }
 
     // Return number of seconds since we started the initial timer (startTime)
@@ -145,6 +114,14 @@ contract NFTisse is ERC721A, Ownable {
         _contractURI = URI;
     }
 
+    // Specify a merkle root hash from the gathered k/v dictionary of
+    // addresses and their claimable amount of tokens - thanks Kiwi!
+    // https://github.com/0xKiwi/go-merkle-distributor
+    function setMerkleRoot(bytes32 root) external onlyOwner {
+        merkleRoot = root;
+        merkleSet = true;
+    }
+
     // Reserve some tokens for giveaways
     function reserveTokens() public onlyOwner {
         // Only allow one-time reservation of tokens
@@ -161,9 +138,11 @@ contract NFTisse is ERC721A, Ownable {
         // Mint number of tokens requested
         _safeMint(msg.sender, numberOfTokens);
 
-        // Increment internal wallet balance if in PUBLIC mode
-        if (getMintPhase() == MintPhase.PUBLIC) {
-          walletBalance[msg.sender] = walletBalance[msg.sender].add(numberOfTokens);
+        // Increment internal wallet balances
+        if (getMintPhase() == MintPhase.RESERVED) {
+            reservedBalance[msg.sender] = reservedBalance[msg.sender].add(numberOfTokens);
+        } else {
+            publicBalance[msg.sender] = publicBalance[msg.sender].add(numberOfTokens);
         }
 
         // Disable minting if max supply of tokens is reached
@@ -177,27 +156,29 @@ contract NFTisse is ERC721A, Ownable {
         require(mintingIsActive, "Minting is not active.");
         require(msg.sender == tx.origin, "Cannot mint from external contract.");
         require(totalSupply().add(numberOfTokens) <= maxSupply, "Minting would exceed max supply.");
+        require(getMintPhase() == MintPhase.PUBLIC, "Must be in public mint phase.");
+        require(numberOfTokens <= maxMint, "Cannot mint more than 3 during mint.");
+        require(publicBalance[msg.sender].add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
 
-        if (getMintPhase() == MintPhase.PUBLIC) {
-            require(numberOfTokens <= maxMint, "Cannot mint more than 3 during mint.");
-            require(walletBalance[msg.sender].add(numberOfTokens) <= maxWallet, "Cannot mint more than 3 per wallet.");
-        } else {
-            uint256 mintable = getMintAmount();
-            require(mintable > 0, "Not enough unclaimed Art101 RMutt tokens.");
-            require(numberOfTokens <= mintable, "Cannot mint more NFTisse tokens than unclaimed RMutt tokens.");
-            uint256 locked;
-            for(uint256 i = 0; i < RMUTT.balanceOf(msg.sender); i++) {
-                // get each token user owns and lock that token to prevent duplicate buys and increment amount available to mint
-                // only lock tokens up to the amount requested
-                if (locked < numberOfTokens) {
-                    uint256 token = RMUTT.tokenOfOwnerByIndex(msg.sender, i);
-                    if (!tokenUsed[token]) {
-                        tokenUsed[token] = true;
-                        locked = locked.add(1);
-                    }
-                }
-            }
-        }
+        _mintTokens(numberOfTokens);
+    }
+
+    function mintSnapshot(
+      uint256 index,
+      address account,
+      uint256 whitelistedAmount,
+      bytes32[] calldata merkleProof,
+      uint256 numberOfTokens
+    ) external payable {
+        require(mintingIsActive, "Minting is not active.");
+        require(totalSupply().add(numberOfTokens) <= maxSupply, "Minting would exceed max supply.");
+        require(reservedBalance[msg.sender].add(numberOfTokens) <= whitelistedAmount, "Cannot mint more than the amount whitelisted for.");
+
+        // Merkle checks
+        require(merkleSet, "Merkle root not set by contract owner.");
+        require(msg.sender == account, "Can only be claimed by the whitelisted address.");
+        bytes32 node = keccak256(abi.encodePacked(index, account, whitelistedAmount));
+        require(MerkleProof.verify(merkleProof, merkleRoot, node), "Invalid merkle proof.");
 
         _mintTokens(numberOfTokens);
     }
